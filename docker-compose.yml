@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  db:
+    image: ankane/pgvector:latest
+    container_name: studylens_db
+    environment:
+      POSTGRES_USER: studylens_user
+      POSTGRES_PASSWORD: studylens_password
+      POSTGRES_DB: studylens_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - studylens_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  studylens_pgdata:

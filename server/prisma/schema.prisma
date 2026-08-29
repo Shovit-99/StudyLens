@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  password  String
+  name      String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  subjects  Subject[]
+  documents Document[]
+}
+
+model Subject {
+  id        String     @id @default(uuid())
+  name      String
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents Document[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Document {
+  id         String         @id @default(uuid())
+  title      String
+  filename   String
+  file_type  String
+  file_size  Int
+  file_path  String
+  status     String         // UPLOADED, PROCESSING, COMPLETED, FAILED
+  userId     String
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subjectId  String?
+  subject    Subject?       @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  pages      DocumentPage[]
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+}
+
+model DocumentPage {
+  id         String          @id @default(uuid())
+  documentId String
+  document   Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  pageNumber Int
+  content    String
+  chunks     DocumentChunk[]
+}
+
+model DocumentChunk {
+  id         String       @id @default(uuid())
+  pageId     String
+  page       DocumentPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  chunkIndex Int
+  content    String
+  // We will add the embedding field in Week 2 manually via SQL since Prisma has limited support for pgvector natively right now,
+  // or we can add unsupported("vector(1536)") depending on our needs later. For now we will keep it simple.
+}
+
+model SearchHistory {
+  id        String   @id @default(uuid())
+  query     String
+  createdAt DateTime @default(now())
+}
