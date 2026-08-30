@@ -2,6 +2,8 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import authRoutes from './routes/auth';
+import subjectRoutes from './routes/subjects';
+import documentRoutes from './routes/documents';
 
 dotenv.config();
 
@@ -12,6 +14,8 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
+app.use('/api/subjects', subjectRoutes);
+app.use('/api/documents', documentRoutes);
 
 app.get('/api/health', (req: Request, res: Response) => {
   res.json({ message: 'StudyLens API running' });

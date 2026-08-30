@@ -20,20 +20,28 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-white">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-blue-400">
+    <div className="min-h-screen bg-[#dcece2] relative overflow-hidden font-sans text-gray-800 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      {/* Background Blobs */}
+      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-teal-200/50 blur-[120px] mix-blend-multiply"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-emerald-200/50 blur-[100px] mix-blend-multiply"></div>
+
+      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
+        <h2 className="mt-6 text-center text-3xl font-bold text-teal-900">
           Sign in to StudyLens
         </h2>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-gray-800 py-8 px-4 shadow sm:rounded-lg sm:px-10 border border-gray-700">
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
+        <div className="bg-white/40 backdrop-blur-xl py-8 px-4 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] sm:rounded-[2rem] sm:px-10 border border-white/50">
           <form className="space-y-6" onSubmit={handleLogin}>
-            {error && <div className="text-red-500 text-sm">{error}</div>}
+            {error && (
+              <div className="bg-red-50/80 border border-red-200 text-red-600 rounded-xl p-3 text-sm text-center">
+                {error}
+              </div>
+            )}
             
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-300">
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 Email address
               </label>
               <div className="mt-1">
@@ -42,7 +50,7 @@ export default function Login() {
                   name="email"
                   type="email"
                   required
-                  className="appearance-none block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm placeholder-gray-400 bg-gray-700 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="appearance-none block w-full px-4 py-3 border border-white/60 rounded-xl shadow-sm placeholder-gray-400 bg-white/50 text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent sm:text-sm transition-all"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
@@ -50,7 +58,7 @@ export default function Login() {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-300">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                 Password
               </label>
               <div className="mt-1">
@@ -59,7 +67,7 @@ export default function Login() {
                   name="password"
                   type="password"
                   required
-                  className="appearance-none block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm placeholder-gray-400 bg-gray-700 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  className="appearance-none block w-full px-4 py-3 border border-white/60 rounded-xl shadow-sm placeholder-gray-400 bg-white/50 text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent sm:text-sm transition-all"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
@@ -69,7 +77,7 @@ export default function Login() {
             <div>
               <button
                 type="submit"
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-md text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500 transition-colors"
               >
                 Sign in
               </button>
@@ -77,8 +85,8 @@ export default function Login() {
           </form>
 
           <div className="mt-6 text-center text-sm">
-            <span className="text-gray-400">Don't have an account? </span>
-            <Link to="/register" className="font-medium text-blue-400 hover:text-blue-300">
+            <span className="text-gray-600">Don't have an account? </span>
+            <Link to="/register" className="font-semibold text-teal-700 hover:text-teal-900">
               Register here
             </Link>
           </div>
