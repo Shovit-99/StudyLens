@@ -1,18 +1,48 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
-import { useNavigate, Link } from 'react-router-dom';
-import { Book, LayoutDashboard, Brain, BookOpen, User as UserIcon, LogOut, ChevronDown, CheckCircle2, Clock, Upload, ArrowRight, FileText, Trash2, Edit2, X, Save } from 'lucide-react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { Book, LayoutDashboard, Brain, BookOpen, User as UserIcon, LogOut, ChevronDown, CheckCircle2, Clock, Upload, ArrowRight, FileText, Trash2, Edit2, X, Save, Send, Bot, Maximize2, Minimize2, GraduationCap } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import QuizModal from '../components/QuizModal';
+import ReactMarkdown from 'react-markdown';
 
-const data = [
-  { name: 'Mon', active: 1.2, secondary: 0.8 },
-  { name: 'Tue', active: 1.8, secondary: 1.2 },
-  { name: 'Wed', active: 1.5, secondary: 1.0 },
-  { name: 'Thu', active: 3.8, secondary: 2.1 },
-  { name: 'Fri', active: 1.1, secondary: 0.7 },
-  { name: 'Sat', active: 0.9, secondary: 0.5 },
-  { name: 'Sun', active: 1.0, secondary: 0.6 },
-];
+// Data will be fetched dynamically
+
+const formatDocumentText = (text: string) => {
+  let processed = text.replace(/([a-z])([A-Z])/g, '$1 $2');
+  const lines = processed.split('\n');
+  
+  return lines.map((line, idx) => {
+    const trimmed = line.trim();
+    if (!trimmed) return <div key={idx} className="h-2"></div>;
+
+    const isHeader = trimmed.length > 0 && trimmed.length < 60 && 
+                     !/^[•\-\*]/.test(trimmed) && 
+                     !/[.,:;!?]$/.test(trimmed);
+
+    const isCode = /[{}=;]/.test(trimmed) || /^(const |let |var |import |export |function |class |if |for |while )/.test(trimmed);
+
+    if (isHeader && !isCode) {
+      return <h4 key={idx} className="font-bold text-slate-900 text-[18px] mt-6 mb-2">{trimmed}</h4>;
+    }
+
+    if (isCode) {
+      return (
+        <code key={idx} className="block font-mono text-[13px] bg-slate-100 text-slate-800 px-3 py-1.5 rounded-md my-1 whitespace-pre overflow-x-auto">
+          {line}
+        </code>
+      );
+    }
+
+    const isBullet = /^[•\-\*]/.test(trimmed);
+    if (isBullet) {
+      const formattedBullet = trimmed.replace(/^[•\-\*]\s*/, '• ');
+      return <p key={idx} className="pl-4 relative text-slate-700 leading-relaxed my-1"><span className="absolute left-0 font-bold text-teal-500">•</span>{formattedBullet.substring(2)}</p>;
+    }
+
+    return <p key={idx} className="text-slate-700 leading-relaxed my-2">{trimmed}</p>;
+  });
+};
 
 export default function Dashboard() {
   const [user, setUser] = useState<{ name: string; email: string; id: string } | null>(null);
@@ -24,7 +54,26 @@ export default function Dashboard() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [aiEnabled, setAiEnabled] = useState(true);
+  const [expandedPanel, setExpandedPanel] = useState<'notes' | 'ai' | null>(null);
+  const [isQuizOpen, setIsQuizOpen] = useState(false);
+  const pdfContainerRef = useRef<HTMLDivElement>(null);
+  
+  const [chatMessages, setChatMessages] = useState<{role: 'user'|'ai', content: string, sources?: number[]}[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [stats, setStats] = useState({ total: 0, chartData: [] });
+  const [showArchived, setShowArchived] = useState(false);
+
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const docId = params.get('docId');
+    if (docId && docId !== selectedDocumentId) {
+      handleDocumentClick(docId);
+    }
+  }, [location.search]);
 
   const fetchDocuments = async (subjectId: string) => {
     try {
@@ -33,6 +82,42 @@ export default function Dashboard() {
         headers: { Authorization: `Bearer ${token}` }
       });
       setDocuments(res.data);
+    } catch(err) {
+      console.error(err);
+    }
+  };
+
+  const fetchSubjects = async (isArchived: boolean) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const res = await axios.get(`http://localhost:5000/api/subjects?archived=${isArchived}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSubjects(res.data);
+    } catch(err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchSubjects(showArchived);
+    }
+  }, [showArchived, user]);
+
+  const toggleArchiveSubject = async (subjectId: string, isArchived: boolean) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.patch(`http://localhost:5000/api/subjects/${subjectId}/archive`, { isArchived }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchSubjects(showArchived);
+      if (selectedSubjectId === subjectId) {
+        setSelectedSubjectId(null);
+        setSelectedDocumentId(null);
+        setDocuments([]);
+      }
     } catch(err) {
       console.error(err);
     }
@@ -48,6 +133,8 @@ export default function Dashboard() {
   const handleDocumentClick = async (docId: string) => {
     setSelectedDocumentId(docId);
     setDocumentDetails(null);
+    setChatMessages([]);
+    setExpandedPanel(null);
     try {
       const token = localStorage.getItem('token');
       const res = await axios.get(`http://localhost:5000/api/documents/${docId}`, {
@@ -106,10 +193,16 @@ export default function Dashboard() {
         setUser(userRes.data);
 
         // Fetch subjects
-        const subjectsRes = await axios.get('http://localhost:5000/api/subjects', {
+        const subjectsRes = await axios.get(`http://localhost:5000/api/subjects?archived=${showArchived}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setSubjects(subjectsRes.data);
+
+        // Fetch weekly stats
+        const statsRes = await axios.get('http://localhost:5000/api/documents/stats/weekly', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setStats(statsRes.data);
       } catch (error) {
         localStorage.removeItem('token');
         navigate('/login');
@@ -136,6 +229,30 @@ export default function Dashboard() {
       (e.target as any).reset();
     } catch(err) {
       console.error(err);
+    }
+  };
+
+  const handleChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !selectedDocumentId) return;
+    
+    const query = chatInput.trim();
+    setChatInput('');
+    setChatMessages(prev => [...prev, { role: 'user', content: query }]);
+    setIsChatLoading(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post('http://localhost:5000/api/chat', 
+        { query, documentId: selectedDocumentId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setChatMessages(prev => [...prev, { role: 'ai', content: res.data.answer, sources: res.data.sources }]);
+    } catch(err) {
+      console.error(err);
+      setChatMessages(prev => [...prev, { role: 'ai', content: 'Sorry, I encountered an error. Please make sure your Groq API key is valid.' }]);
+    } finally {
+      setIsChatLoading(false);
     }
   };
 
@@ -168,14 +285,14 @@ export default function Dashboard() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#dcece2] flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-teal-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#dcece2] relative overflow-x-hidden font-sans text-gray-800">
+    <div className="min-h-screen bg-[#dcece2] relative overflow-x-hidden font-sans text-slate-800">
       {/* Background Blobs for Glassmorphic Depth */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-teal-200/50 blur-[120px] mix-blend-multiply"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-emerald-200/50 blur-[100px] mix-blend-multiply"></div>
@@ -184,15 +301,12 @@ export default function Dashboard() {
       <nav className="relative z-10 p-4 max-w-7xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-12 bg-white/40 backdrop-blur-md px-6 py-3 rounded-full shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] border border-white/40">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-xl tracking-tight text-teal-900">Study<span className="text-teal-600">Lens</span></span>
+            <img src="/logo.png" alt="StudyLens" className="h-16 w-auto scale-125 origin-left" />
             <span className="text-xs font-medium text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full">beta</span>
           </div>
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
-            <Link to="/dashboard" className="text-teal-700 flex items-center gap-1">Dashboard <ChevronDown className="w-3 h-3"/></Link>
+            <Link to="/dashboard" className="text-teal-700 flex items-center gap-1">Dashboard</Link>
             <Link to="/search" className="hover:text-teal-700">Search</Link>
-            <a href="#" className="hover:text-teal-700">Subjects</a>
-            <a href="#" className="hover:text-teal-700">Documents</a>
-            <a href="#" className="hover:text-teal-700">Analytics</a>
           </div>
         </div>
         
@@ -208,150 +322,135 @@ export default function Dashboard() {
       </nav>
 
       {/* Hero Section */}
-      <main className="relative z-10 max-w-7xl mx-auto px-4 pt-20 pb-12 flex flex-col items-center text-center">
-        <h1 className="text-5xl md:text-7xl font-semibold tracking-tight text-gray-900 mb-6 max-w-4xl leading-[1.1]">
-          Organize Your Knowledge Journey with <span className="text-teal-900">Intelligent Notes</span>
+      <main className="relative z-10 max-w-7xl mx-auto px-4 pb-12 flex flex-col items-center text-center">
+        <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 mb-4 max-w-3xl leading-[1.15]">
+          Organize your knowledge with <span className="text-teal-600">intelligent notes.</span>
         </h1>
-        <p className="text-lg md:text-xl text-gray-600 mb-10 max-w-2xl leading-relaxed">
-          Build, connect, and analyze your lecture notes. Leverage AI to create summaries, quizzes, and personalized study paths.
+        <p className="text-lg text-slate-500 mb-10 max-w-2xl leading-relaxed">
+          Upload your lectures, automatically extract text, and use AI to generate summaries and find answers instantly.
         </p>
-        <div className="flex items-center gap-4">
-          <button className="bg-white text-gray-900 px-8 py-4 rounded-full font-semibold shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:-translate-y-0.5 transition-all flex items-center gap-2">
-            Start Learning <ArrowRight className="w-5 h-5"/>
-          </button>
-          <button className="bg-white/30 backdrop-blur-md border border-white/50 text-gray-800 px-8 py-4 rounded-full font-semibold hover:bg-white/40 transition-all shadow-sm">
-            Study Library
-          </button>
-        </div>
 
-        {/* Dashboard Glassmorphic Panels */}
-        <div className="mt-20 w-full grid grid-cols-1 lg:grid-cols-12 gap-6 relative">
+        {/* Dashboard Panels */}
+        {/* Dashboard Panels */}
+        {/* Dashboard Panels */}
+        <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 relative h-[700px]">
           {/* Left Panel: Subject Dashboard */}
-          <div className="lg:col-span-5 bg-white/40 backdrop-blur-xl border border-white/50 rounded-[2rem] p-8 shadow-[0_8px_32px_0_rgba(31,38,135,0.05)] flex flex-col text-left">
-            <div className="flex items-center justify-between mb-8">
+          <div className="lg:col-span-4 bg-white/40 backdrop-blur-xl border border-white/50 rounded-[2rem] p-6 shadow-sm flex flex-col text-left">
+            <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-100">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-white/60 flex items-center justify-center shadow-sm">
-                  <LayoutDashboard className="w-5 h-5 text-teal-700"/>
+                <div className="w-9 h-9 rounded-lg bg-teal-50 border border-teal-100 flex items-center justify-center">
+                  <LayoutDashboard className="w-4 h-4 text-teal-600"/>
                 </div>
-                <h2 className="font-semibold text-lg">Notebook Dashboard</h2>
+                <h2 className="font-semibold text-[15px] text-slate-900">Notebooks</h2>
               </div>
-              <div className="flex gap-2 bg-white/40 rounded-lg p-1 text-xs font-medium">
-                <button className="bg-white shadow-sm px-3 py-1 rounded-md text-gray-800">Live</button>
-                <button className="px-3 py-1 text-gray-500 hover:text-gray-700">Archived</button>
+              <div className="flex gap-1 bg-slate-100/80 p-1 rounded-md text-[11px] font-semibold tracking-wide uppercase">
+                <button onClick={() => setShowArchived(false)} className={`px-2.5 py-1 rounded transition-colors ${!showArchived ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>Live</button>
+                <button onClick={() => setShowArchived(true)} className={`px-2.5 py-1 rounded transition-colors ${showArchived ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>Archived</button>
               </div>
             </div>
 
-            <div className="flex-1 space-y-4 mb-6">
+            <div className="flex-1 overflow-y-auto space-y-4 mb-6 custom-scrollbar pr-2">
               {/* Form to add a subject quickly */}
-              <form onSubmit={createSubject} className="flex items-center gap-2 mb-6">
-                <input 
-                  type="text" 
-                  name="subjectName"
-                  placeholder="New Subject..." 
-                  className="w-full bg-white/50 border border-white/60 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/50"
-                />
-                <button type="submit" className="bg-teal-600 text-white p-2 rounded-xl shadow-sm hover:bg-teal-700">
-                  <Upload className="w-4 h-4"/>
-                </button>
-              </form>
+              {!showArchived && (
+                <form onSubmit={createSubject} className="flex items-center gap-2 mb-6">
+                  <input 
+                    type="text" 
+                    name="subjectName"
+                    placeholder="New Subject..." 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all"
+                  />
+                  <button type="submit" className="bg-slate-900 text-white p-2 rounded-lg shadow-sm hover:bg-teal-600 transition-colors">
+                    <Upload className="w-4 h-4"/>
+                  </button>
+                </form>
+              )}
 
               {/* Dynamic Subjects List */}
-              {subjects.length > 0 ? (
-                subjects.map((sub, index) => (
-                  <div key={sub.id} onClick={() => handleSubjectClick(sub.id)} className={`flex items-center justify-between group p-2 rounded-xl transition-colors cursor-pointer ${selectedSubjectId === sub.id ? 'bg-white/50 border border-teal-200 shadow-sm' : 'hover:bg-white/30'}`}>
-                    <div className="flex items-center gap-3">
-                      <BookOpen className={`w-4 h-4 ${selectedSubjectId === sub.id ? 'text-teal-600' : 'text-gray-500'}`} />
-                      <span className="font-medium text-gray-700 group-hover:text-teal-900 transition-colors">{sub.name}</span>
+              <div className="space-y-1.5">
+                {subjects.length > 0 ? (
+                  subjects.map((sub, index) => (
+                    <div key={sub.id} onClick={() => handleSubjectClick(sub.id)} className={`flex items-center justify-between group px-3 py-2.5 rounded-lg transition-all cursor-pointer border ${selectedSubjectId === sub.id ? 'bg-teal-50/50 border-teal-200/60 shadow-sm' : 'border-transparent hover:bg-slate-50 hover:border-slate-200'}`}>
+                      <div className="flex items-center gap-3">
+                        <BookOpen className={`w-4 h-4 ${selectedSubjectId === sub.id ? 'text-teal-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                        <span className={`text-[14px] font-medium transition-colors ${selectedSubjectId === sub.id ? 'text-teal-900' : 'text-slate-600 group-hover:text-slate-900'}`}>{sub.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={(e) => { e.stopPropagation(); toggleArchiveSubject(sub.id, !showArchived); }} className="cursor-pointer text-[11px] font-semibold tracking-wide uppercase text-slate-500 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors opacity-0 group-hover:opacity-100">
+                          {showArchived ? 'Unarchive' : 'Archive'}
+                        </button>
+                        <label onClick={(e) => e.stopPropagation()} className="cursor-pointer text-[11px] font-semibold tracking-wide uppercase text-slate-500 hover:text-teal-600 hover:bg-teal-50 px-2 py-1 rounded transition-colors flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                          <Upload className="w-3 h-3"/> PDF
+                          <input type="file" className="hidden" accept=".pdf" onChange={(e) => handleFileUpload(sub.id, e)} />
+                        </label>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <label onClick={(e) => e.stopPropagation()} className="cursor-pointer text-xs font-medium text-teal-600 hover:text-teal-800 flex items-center gap-1 bg-white/50 px-2 py-1 rounded-lg">
-                        <Upload className="w-3 h-3"/> PDF
-                        <input type="file" className="hidden" accept=".pdf" onChange={(e) => handleFileUpload(sub.id, e)} />
-                      </label>
-                      {index === 0 ? (
-                         <span className="text-xs font-medium text-emerald-600 flex items-center gap-1 w-24 justify-end"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Active</span>
-                      ) : index === 1 ? (
-                         <span className="text-xs font-medium text-amber-600 flex items-center gap-1 w-24 justify-end"><Clock className="w-3 h-3"/> Processing</span>
-                      ) : (
-                         <span className="text-xs font-medium text-gray-500 flex items-center gap-1 w-24 justify-end"><CheckCircle2 className="w-3 h-3"/> In Review</span>
-                      )}
-                    </div>
+                  ))
+                ) : (
+                  <div className="text-[13px] text-slate-400 text-center py-6 bg-slate-50/50 rounded-lg border border-dashed border-slate-200">
+                    No subjects yet. Create one above!
                   </div>
-                ))
-              ) : (
-                <div className="text-sm text-gray-500 text-center py-4 bg-white/20 rounded-xl border border-dashed border-gray-400">
-                  No subjects yet. Add one above!
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
-            <div className="mt-auto pt-6 border-t border-white/40 flex items-center justify-between">
+            <div className="mt-auto pt-5 border-t border-slate-100 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Brain className="w-4 h-4 text-teal-700"/>
-                <span className="font-medium text-sm">AI Summary Generator</span>
+                <Brain className="w-4 h-4 text-teal-600"/>
+                <span className="font-semibold text-[13px] text-slate-700">AI Assistant</span>
               </div>
               <button 
-                onClick={() => setAiEnabled(!aiEnabled)}
-                className={`w-11 h-6 rounded-full p-1 transition-colors ${aiEnabled ? 'bg-teal-500' : 'bg-gray-300'}`}
+                onClick={() => {
+                  setAiEnabled(!aiEnabled);
+                  if (aiEnabled && expandedPanel === 'ai') setExpandedPanel(null);
+                }}
+                className={`w-9 h-5 rounded-full p-0.5 transition-colors relative ${aiEnabled ? 'bg-teal-500' : 'bg-slate-200'}`}
               >
-                <div className={`w-4 h-4 rounded-full bg-white transition-transform ${aiEnabled ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform absolute top-0.5 ${aiEnabled ? 'translate-x-4' : 'translate-x-0.5'}`}></div>
               </button>
             </div>
           </div>
 
           {/* Right Panel: Analytics or Documents */}
-          <div className="lg:col-span-7 bg-white/40 backdrop-blur-xl border border-white/50 rounded-[2rem] p-8 shadow-[0_8px_32px_0_rgba(31,38,135,0.05)] text-left flex flex-col">
+          <div className="lg:col-span-8 bg-white/40 backdrop-blur-xl border border-white/50 rounded-[2rem] shadow-sm text-left flex flex-col overflow-hidden relative">
             {!selectedSubjectId ? (
-              <>
-                <div className="flex items-start justify-between mb-8">
+              <div className="p-8">
+                <div className="flex items-start justify-between mb-10 pb-6 border-b border-slate-100">
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-teal-100 border border-teal-200 flex items-center justify-center shadow-sm">
-                      <span className="text-xs font-bold text-teal-800">Q-4</span>
+                    <div className="w-12 h-12 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center">
+                      <BarChart className="w-6 h-6 text-slate-700"/>
                     </div>
                     <div>
-                      <h2 className="font-semibold text-lg leading-tight">Weekly Study Engagement &amp; Note Creation</h2>
-                      <p className="text-sm text-gray-500 mt-1">Total Resources Created: <span className="font-semibold text-gray-800">12.4M</span></p>
+                      <h2 className="font-bold text-xl text-slate-900 leading-tight">Weekly Activity</h2>
+                      <p className="text-[14px] text-slate-500 mt-1">Total documents processed: <span className="font-semibold text-slate-700">{stats.total}</span></p>
                     </div>
                   </div>
                 </div>
-
-                <div className="flex-1 w-full min-h-[300px] mt-4 relative">
-                  <div className="absolute top-4 right-4 z-10 bg-white/80 backdrop-blur border border-white rounded-xl p-3 shadow-lg text-xs font-medium space-y-2">
-                    <div className="flex justify-between gap-4">
-                        <span className="text-gray-600 flex items-center gap-1"><Book className="w-3 h-3"/> Summaries (GPT-4)</span>
-                        <span className="text-gray-900">2.1M</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                        <span className="text-gray-600 flex items-center gap-1"><Brain className="w-3 h-3"/> Flashcards (Llama 3)</span>
-                        <span className="text-gray-900">1.8M</span>
-                    </div>
-                  </div>
-
+                <div className="flex-1 w-full h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#6b7280', fontSize: 12}} dy={10} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} tickFormatter={(val) => `${val}M`} />
+                    <BarChart data={stats.chartData} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 500}} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 500}} allowDecimals={false} />
                       <Tooltip 
-                        cursor={{fill: 'rgba(255,255,255,0.4)'}} 
-                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                        cursor={{fill: '#f8fafc'}} 
+                        contentStyle={{borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05)'}}
                       />
-                      <Bar dataKey="secondary" stackId="a" fill="#e5e7eb" radius={[0, 0, 4, 4]} />
                       <Bar dataKey="active" stackId="a" radius={[4, 4, 0, 0]}>
-                        {data.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.name === 'Thu' ? '#10b981' : '#cbd5e1'} />
+                        {stats.chartData.map((entry: any, index: number) => (
+                          <Cell key={`cell-${index}`} fill={entry.isToday ? '#0f766e' : '#cbd5e1'} />
                         ))}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-              </>
+              </div>
             ) : selectedDocumentId && documentDetails ? (
-              <div className="flex flex-col h-full">
-                <div className="flex items-center justify-between mb-6 pb-6 border-b border-white/40">
+              <div className="flex flex-col h-full relative">
+                {/* Sticky Header for Reader View */}
+                <div className="sticky top-0 z-10 bg-white/40 backdrop-blur-xl border-b border-white/50 px-8 py-5 flex items-center justify-between">
                   <div className="flex items-center gap-4 flex-1">
-                    <div className="w-12 h-12 rounded-xl bg-teal-100 border border-teal-200 flex items-center justify-center shadow-sm shrink-0">
-                      <FileText className="w-6 h-6 text-teal-700"/>
+                    <div className="w-10 h-10 rounded-lg bg-teal-50 border border-teal-100 flex items-center justify-center shrink-0">
+                      <FileText className="w-5 h-5 text-teal-600"/>
                     </div>
                     <div className="flex-1 min-w-0">
                       {isEditingTitle ? (
@@ -360,122 +459,238 @@ export default function Dashboard() {
                             type="text" 
                             value={newTitle} 
                             onChange={(e) => setNewTitle(e.target.value)}
-                            className="bg-white/70 border border-teal-300 rounded-lg px-3 py-1.5 text-lg font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 w-full max-w-md"
+                            className="bg-white border border-teal-500 rounded-md px-2.5 py-1 text-[15px] font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500/20 w-full max-w-sm shadow-sm"
                             autoFocus
                           />
-                          <button onClick={handleUpdateTitle} className="p-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors">
-                            <Save className="w-4 h-4" />
+                          <button onClick={handleUpdateTitle} className="p-1.5 bg-teal-600 text-white rounded hover:bg-teal-700 transition-colors">
+                            <Save className="w-3.5 h-3.5" />
                           </button>
-                          <button onClick={() => { setIsEditingTitle(false); setNewTitle(documentDetails.title); }} className="p-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
-                            <X className="w-4 h-4" />
+                          <button onClick={() => { setIsEditingTitle(false); setNewTitle(documentDetails.title); }} className="p-1.5 bg-slate-100 text-slate-600 rounded hover:bg-slate-200 transition-colors">
+                            <X className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-3">
-                          <h2 className="font-bold text-xl leading-tight text-gray-900 truncate" title={documentDetails.title}>
+                        <div className="flex items-center gap-2 group">
+                          <h2 className="font-bold text-[17px] text-slate-900 truncate" title={documentDetails.title}>
                             {documentDetails.title}
                           </h2>
-                          <button onClick={() => setIsEditingTitle(true)} className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors">
-                            <Edit2 className="w-4 h-4" />
+                          <button onClick={() => setIsEditingTitle(true)} className="p-1 text-slate-400 hover:text-teal-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Edit2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       )}
-                      <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
+                      <p className="text-[12px] font-medium text-slate-400 mt-0.5 flex items-center gap-2">
                         <span>{new Date(documentDetails.createdAt).toLocaleDateString()}</span>
                         <span>•</span>
                         <span>{(documentDetails.file_size / 1024 / 1024).toFixed(2)} MB</span>
-                        <span>•</span>
-                        <span className="capitalize">{documentDetails.status.toLowerCase()}</span>
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0 ml-4">
-                    <button onClick={handleDeleteDocument} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors">
-                      <Trash2 className="w-4 h-4" /> Delete
+                    <button 
+                      onClick={() => setIsQuizOpen(true)}
+                      className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold text-white bg-teal-600 shadow-md shadow-teal-500/20 hover:bg-teal-700 hover:shadow-teal-500/30 rounded-full transition-all"
+                    >
+                      <GraduationCap className="w-4 h-4" /> Quiz Me!
                     </button>
-                    <button onClick={() => setSelectedDocumentId(null)} className="text-sm text-gray-500 hover:text-gray-800 bg-white/50 px-3 py-1.5 rounded-lg border border-white/60 shadow-sm transition-colors">
-                      Back to List
+                    <div className="w-px h-5 bg-slate-200 mx-1"></div>
+                    <button onClick={handleDeleteDocument} className="flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-semibold text-red-600 hover:bg-red-50 rounded-md transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
+                    <div className="w-px h-4 bg-slate-200"></div>
+                    <button onClick={() => setSelectedDocumentId(null)} className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors px-2">
+                      Close
                     </button>
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                  <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                    <BookOpen className="w-4 h-4 text-teal-600" /> Extracted Text
-                  </h3>
-                  {documentDetails.pages && documentDetails.pages.length > 0 ? (
-                    <div className="space-y-6">
-                      {documentDetails.pages.map((page: any) => (
-                        <div key={page.id} className="bg-white/60 border border-white/80 rounded-xl p-6 shadow-sm">
-                          <div className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">Page {page.pageNumber}</div>
-                          <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{page.content}</p>
+                {/* Content Area: Reader + Optional Chat */}
+                <div className="flex-1 flex overflow-hidden">
+                  {(expandedPanel === null || expandedPanel === 'notes') && (
+                    <div ref={pdfContainerRef} className={`overflow-hidden relative ${aiEnabled && expandedPanel === null ? 'w-1/2 border-r border-slate-200' : 'w-full'}`}>
+                      {documentDetails.file_path ? (
+                        <>
+                          <iframe 
+                            src={`http://localhost:5000/uploads/${documentDetails.file_path.split(/[\\/]/).pop()}#toolbar=0&navpanes=0&view=FitH`}
+                            className="w-full h-full bg-slate-100/50"
+                            title={documentDetails.title}
+                          />
+                          <button 
+                            onClick={() => setExpandedPanel(expandedPanel === 'notes' ? null : 'notes')}
+                            className="absolute bottom-4 right-4 p-2.5 bg-white border border-slate-200 shadow-lg rounded-full text-slate-500 hover:text-teal-600 hover:bg-slate-50 transition-colors z-10"
+                            title={expandedPanel === 'notes' ? "Restore Panel" : "Maximize Panel"}
+                          >
+                            {expandedPanel === 'notes' ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                          </button>
+                        </>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-center">
+                          <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center mb-4 border border-slate-100">
+                            <FileText className="w-8 h-8 text-slate-300" />
+                          </div>
+                          <h3 className="text-slate-900 font-semibold mb-1">Document Unavailable</h3>
+                          <p className="text-[14px] text-slate-500">The file could not be found.</p>
                         </div>
-                      ))}
+                      )}
                     </div>
-                  ) : (
-                    <div className="bg-white/40 border border-white/60 rounded-xl p-8 text-center">
-                      <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
-                        <FileText className="w-6 h-6 text-gray-400" />
+                  )}
+
+                  {/* AI Chat Panel */}
+                  {aiEnabled && (expandedPanel === null || expandedPanel === 'ai') && (
+                    <div className={`flex flex-col bg-slate-50 relative ${expandedPanel === null ? 'w-1/2' : 'w-full'}`}>
+                      <button 
+                        onClick={() => setExpandedPanel(expandedPanel === 'ai' ? null : 'ai')}
+                        className="absolute top-4 right-4 p-2.5 bg-white border border-slate-200 shadow-lg rounded-full text-slate-500 hover:text-teal-600 hover:bg-slate-50 transition-colors z-20"
+                        title={expandedPanel === 'ai' ? "Restore Panel" : "Maximize Panel"}
+                      >
+                        {expandedPanel === 'ai' ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                      </button>
+
+                      <div className="absolute inset-0 bg-[#dcece2]/20 mix-blend-multiply pointer-events-none"></div>
+                      <div className="flex-1 overflow-y-auto p-6 pt-16 space-y-4 custom-scrollbar relative z-10">
+                        {chatMessages.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center h-full text-center text-slate-500">
+                            <Brain className="w-12 h-12 mb-3 text-teal-600/40" />
+                            <p className="font-medium text-[15px] text-slate-700">Ask anything about this document!</p>
+                            <p className="text-[13px] mt-1 text-slate-500">Groq will search your notes and generate a lightning-fast answer.</p>
+                          </div>
+                        ) : (
+                          chatMessages.map((msg, idx) => (
+                            <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                              {msg.role === 'ai' && <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center shrink-0 shadow-sm"><Bot className="w-4 h-4 text-teal-600"/></div>}
+                                <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[14px] leading-relaxed shadow-sm flex flex-col ${msg.role === 'user' ? 'bg-teal-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none'}`}>
+                                  {msg.role === 'ai' ? (
+                                    <div className="markdown-body">
+                                      <ReactMarkdown
+                                        components={{
+                                          strong: ({node, ...props}) => <strong className="font-bold text-slate-900" {...props} />,
+                                          code: ({node, inline, ...props}: any) => 
+                                            inline 
+                                              ? <code className="bg-slate-100 text-teal-800 px-1.5 py-0.5 rounded font-mono text-[13px]" {...props} />
+                                              : <div className="bg-slate-800 text-slate-100 p-3 rounded-lg overflow-x-auto font-mono text-[13px] my-2 leading-relaxed"><code {...props} /></div>,
+                                          p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />,
+                                          ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-2 space-y-1" {...props} />,
+                                          ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-2 space-y-1" {...props} />,
+                                          h1: ({node, ...props}) => <h1 className="text-lg font-bold mb-2 mt-4 text-slate-900" {...props} />,
+                                          h2: ({node, ...props}) => <h2 className="text-base font-bold mb-2 mt-3 text-slate-900" {...props} />,
+                                          h3: ({node, ...props}) => <h3 className="text-[15px] font-bold mb-2 mt-3 text-slate-900" {...props} />,
+                                          li: ({node, ...props}) => <li className="pl-1" {...props} />
+                                        }}
+                                      >
+                                        {msg.content}
+                                      </ReactMarkdown>
+                                    </div>
+                                  ) : (
+                                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                                  )}
+                                {msg.sources && msg.sources.length > 0 && (
+                                  <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-slate-100/50">
+                                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider self-center mr-1">Sources:</span>
+                                    {msg.sources.map(page => (
+                                      <span key={page} className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-50 text-slate-500 border border-slate-200 flex items-center gap-1 cursor-pointer hover:bg-slate-100 transition-colors" title={`Go to page ${page}`}>
+                                        📄 Page {page}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                        {isChatLoading && (
+                          <div className="flex gap-3 justify-start">
+                            <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center shrink-0"><Bot className="w-4 h-4 text-teal-600"/></div>
+                            <div className="max-w-[85%] rounded-2xl px-4 py-3 bg-white border border-slate-200 shadow-sm rounded-bl-none flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce"></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce delay-75"></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce delay-150"></span>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <p className="text-gray-500 font-medium">No text extracted yet.</p>
-                      <p className="text-sm text-gray-400 mt-1">If this document is still processing, please check back later.</p>
+                      
+                      <div className="p-4 bg-white border-t border-slate-200 relative z-10">
+                        <form onSubmit={handleChatSubmit} className="flex gap-2 relative">
+                          <input 
+                            type="text" 
+                            value={chatInput}
+                            onChange={(e) => setChatInput(e.target.value)}
+                            placeholder="Ask a question..." 
+                            className="w-full bg-slate-50 border border-slate-200 rounded-full pl-4 pr-12 py-2.5 text-[14px] focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500 transition-all text-slate-800 placeholder:text-slate-400"
+                            disabled={isChatLoading}
+                          />
+                          <button type="submit" disabled={isChatLoading || !chatInput.trim()} className="absolute right-1.5 top-1.5 bottom-1.5 aspect-square bg-teal-600 text-white rounded-full flex items-center justify-center hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:hover:bg-teal-600 shadow-sm">
+                            <Send className="w-4 h-4 translate-x-[-1px] translate-y-[1px]"/>
+                          </button>
+                        </form>
+                      </div>
                     </div>
                   )}
                 </div>
+
+                <QuizModal 
+                  isOpen={isQuizOpen} 
+                  onClose={() => setIsQuizOpen(false)} 
+                  documentId={selectedDocumentId} 
+                  documentTitle={documentDetails.title}
+                />
               </div>
             ) : (
               <div className="flex flex-col h-full">
-                <div className="flex items-center justify-between mb-8">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center shadow-sm">
-                      <BookOpen className="w-5 h-5 text-emerald-700"/>
+                <div className="px-8 py-6 border-b border-white/50 flex items-center justify-between sticky top-0 bg-white/40 backdrop-blur-xl z-10">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center">
+                      <BookOpen className="w-5 h-5 text-teal-600"/>
                     </div>
                     <div>
-                      <h2 className="font-semibold text-lg leading-tight">
+                      <h2 className="font-bold text-[17px] text-slate-900 leading-tight">
                         {subjects.find(s => s.id === selectedSubjectId)?.name || 'Subject Documents'}
                       </h2>
-                      <p className="text-sm text-gray-500 mt-1">{documents.length} document{documents.length !== 1 && 's'} found</p>
+                      <p className="text-[13px] font-medium text-slate-500 mt-0.5">{documents.length} document{documents.length !== 1 && 's'} found</p>
                     </div>
                   </div>
-                  <button onClick={() => setSelectedSubjectId(null)} className="text-sm text-gray-500 hover:text-gray-800 bg-white/50 px-3 py-1.5 rounded-lg border border-white/60 shadow-sm transition-colors">
+                  <button onClick={() => setSelectedSubjectId(null)} className="text-[13px] font-semibold text-slate-500 hover:text-slate-900 transition-colors px-2">
                     Close
                   </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-                  {documents.length > 0 ? (
-                    documents.map(doc => (
-                      <div 
-                        key={doc.id} 
-                        onClick={() => handleDocumentClick(doc.id)}
-                        className="bg-white/60 border border-white/80 rounded-xl p-4 flex items-center justify-between shadow-sm hover:shadow-md hover:bg-white/80 hover:border-teal-200 transition-all cursor-pointer group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center group-hover:bg-teal-200 transition-colors">
-                            <Book className="w-4 h-4 text-teal-700"/>
+                <div className="flex-1 overflow-y-auto px-8 py-6 custom-scrollbar">
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    {documents.length > 0 ? (
+                      documents.map(doc => (
+                        <div 
+                          key={doc.id} 
+                          onClick={() => handleDocumentClick(doc.id)}
+                          className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col shadow-sm hover:shadow-md hover:border-teal-300 transition-all cursor-pointer group"
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center group-hover:bg-teal-50 transition-colors">
+                              <Book className="w-5 h-5 text-slate-400 group-hover:text-teal-600 transition-colors"/>
+                            </div>
+                            {doc.status === 'COMPLETED' ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">Ready</span>
+                            ) : doc.status === 'PROCESSING' ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold bg-blue-50 text-blue-700 border border-blue-100 flex items-center gap-1"><Clock className="w-3 h-3"/> Process</span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold bg-red-50 text-red-700 border border-red-100">Failed</span>
+                            )}
                           </div>
                           <div>
-                            <h3 className="font-medium text-gray-900 text-sm group-hover:text-teal-900 transition-colors">{doc.title}</h3>
-                            <p className="text-xs text-gray-500 mt-0.5">{new Date(doc.createdAt).toLocaleDateString()} • {(doc.file_size / 1024 / 1024).toFixed(2)} MB</p>
+                            <h3 className="font-semibold text-slate-900 text-[15px] group-hover:text-teal-700 transition-colors line-clamp-1">{doc.title}</h3>
+                            <p className="text-[12px] font-medium text-slate-400 mt-1">{new Date(doc.createdAt).toLocaleDateString()} • {(doc.file_size / 1024 / 1024).toFixed(2)} MB</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {doc.status === 'COMPLETED' ? (
-                            <span className="px-2 py-1 rounded-md bg-emerald-100 text-emerald-800 text-xs font-medium border border-emerald-200">Processed</span>
-                          ) : doc.status === 'PROCESSING' ? (
-                            <span className="px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-xs font-medium border border-blue-200 flex items-center gap-1"><Clock className="w-3 h-3"/> Extracting...</span>
-                          ) : (
-                            <span className="px-2 py-1 rounded-md bg-gray-100 text-gray-800 text-xs font-medium border border-gray-200">{doc.status}</span>
-                          )}
+                      ))
+                    ) : (
+                      <div className="col-span-full flex flex-col items-center justify-center py-20 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center mb-4 border border-slate-100">
+                          <Upload className="w-8 h-8 text-slate-300"/>
                         </div>
+                        <h3 className="text-slate-900 font-semibold mb-1">No documents found</h3>
+                        <p className="text-[14px] text-slate-500">Upload a PDF to get started!</p>
                       </div>
-                    ))
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 space-y-3">
-                      <Upload className="w-10 h-10 text-gray-300"/>
-                      <p>No documents uploaded yet.<br/>Upload a PDF on the left panel to get started!</p>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             )}

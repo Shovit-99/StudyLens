@@ -1,10 +1,12 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
 }
 
 model User {
@@ -24,6 +26,7 @@ model Subject {
   userId    String
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   documents Document[]
+  isArchived Boolean   @default(false)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 }
@@ -60,8 +63,7 @@ model DocumentChunk {
   page       DocumentPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
   chunkIndex Int
   content    String
-  // We will add the embedding field in Week 2 manually via SQL since Prisma has limited support for pgvector natively right now,
-  // or we can add unsupported("vector(1536)") depending on our needs later. For now we will keep it simple.
+  embedding  Unsupported("vector(768)")?
 }
 
 model SearchHistory {

@@ -11,6 +11,15 @@ export default function Register() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+
+    // Strict email validation checking for a valid TLD
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(email)) {
+      setError('Please enter a legitimate email address with a valid domain.');
+      return;
+    }
+
     try {
       const response = await axios.post('http://localhost:5000/api/auth/register', { name, email, password });
       localStorage.setItem('token', response.data.token);

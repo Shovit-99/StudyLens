@@ -4,16 +4,20 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import prisma from '../prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { authLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
+// Strict email regex ensuring a valid TLD
+const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+
 const registerSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().regex(emailRegex, "Please enter a valid email address with a proper domain"),
   password: z.string().min(6),
   name: z.string().optional(),
 });
 
-router.post('/register', async (req: Request, res: Response) => {
+router.post('/register', authLimiter, async (req: Request, res: Response) => {
   try {
     const { email, password, name } = registerSchema.parse(req.body);
 
@@ -27,7 +31,7 @@ router.post('/register', async (req: Request, res: Response) => {
       data: {
         email,
         password: hashedPassword,
-        name,
+        name: name || null,
       },
     });
 
@@ -38,13 +42,13 @@ router.post('/register', async (req: Request, res: Response) => {
     res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name } });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ message: 'Invalid input data', errors: error.errors });
+      return res.status(400).json({ message: 'Invalid input data', errors: (error as any).errors });
     }
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', authLimiter, async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
@@ -71,7 +75,7 @@ router.post('/login', async (req: Request, res: Response) => {
 router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.user?.id },
+      where: { id: req.user!.id },
       select: { id: true, email: true, name: true, createdAt: true },
     });
     if (!user) {

@@ -3,10 +3,62 @@ import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
 import { BookOpen, LogOut, Search as SearchIcon, FileText, ChevronDown, Loader2 } from 'lucide-react';
 
+const formatDocumentText = (text: string) => {
+  let processed = text.replace(/([a-z])([A-Z])/g, '$1 $2');
+  const lines = processed.split('\n');
+  const blocks: React.ReactNode[] = [];
+  
+  let currentParagraph = "";
+  
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    
+    if (!trimmed) {
+      if (currentParagraph) {
+        blocks.push(<p key={`p-${idx}`} className="text-gray-700 leading-relaxed mb-3">{currentParagraph}</p>);
+        currentParagraph = "";
+      }
+      return;
+    }
+
+    const isBullet = /^[•\-\*]/.test(trimmed) || /^\d+\./.test(trimmed);
+    
+    if (isBullet) {
+      if (currentParagraph) {
+        blocks.push(<p key={`p-${idx}-prev`} className="text-gray-700 leading-relaxed mb-3">{currentParagraph}</p>);
+        currentParagraph = "";
+      }
+      const formattedBullet = trimmed.replace(/^[•\-\*]\s*/, '• ');
+      blocks.push(
+        <div key={`b-${idx}`} className="flex gap-2 mb-1.5 pl-2">
+          <span className="text-teal-500 font-bold opacity-80">{formattedBullet.charAt(0)}</span>
+          <span className="text-gray-700 leading-relaxed">{formattedBullet.substring(2)}</span>
+        </div>
+      );
+    } else {
+      // Avoid combining if it looks like a completely new section
+      if (trimmed.length < 40 && !/[.,;!?]$/.test(trimmed) && currentParagraph.length > 0 && /[.,;!?]$/.test(currentParagraph)) {
+        blocks.push(<p key={`p-${idx}-sec`} className="text-gray-700 leading-relaxed mb-3">{currentParagraph}</p>);
+        currentParagraph = trimmed;
+      } else {
+        currentParagraph += (currentParagraph ? " " : "") + trimmed;
+      }
+    }
+  });
+
+  if (currentParagraph) {
+    blocks.push(<p key="p-last" className="text-gray-700 leading-relaxed mb-3">{currentParagraph}</p>);
+  }
+
+  return <div className="space-y-1">{blocks}</div>;
+};
+
 export default function Search() {
   const [user, setUser] = useState<{ name: string; email: string; id: string } | null>(null);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
+  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const navigate = useNavigate();
@@ -42,16 +94,59 @@ export default function Search() {
     
     setIsSearching(true);
     setHasSearched(true);
+    setAiAnswer(null);
+    setIsAiLoading(true);
+
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get(`http://localhost:5000/api/search?q=${encodeURIComponent(query)}`, {
+      
+      // Fire both requests concurrently
+      const searchReq = axios.get(`http://localhost:5000/api/search/hybrid?q=${encodeURIComponent(query)}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setResults(res.data);
+      
+      const aiReq = axios.post(`http://localhost:5000/api/chat/global`, 
+        { query },
+        { headers: { Authorization: `Bearer ${token}` } }
+      ).catch(e => {
+        console.error("AI Global Chat failed:", e);
+        return { data: { answer: null } };
+      });
+
+      const [searchRes, aiRes] = await Promise.all([searchReq, aiReq]);
+      
+      let finalResults = searchRes.data;
+
+      // Ask AI to format/unsquash the source text of the top 10 results
+      if (finalResults.length > 0) {
+        try {
+          const topResults = finalResults.slice(0, 10);
+          const formatRes = await axios.post(`http://localhost:5000/api/chat/format`, 
+            { chunks: topResults.map((r: any) => r.content) },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          if (formatRes.data && formatRes.data.formattedChunks) {
+            formatRes.data.formattedChunks.forEach((formattedText: string, i: number) => {
+              if (finalResults[i]) {
+                finalResults[i].content = formattedText;
+              }
+            });
+          }
+        } catch (e) {
+          console.error("AI Formatting failed:", e);
+        }
+      }
+
+      setResults(finalResults);
+      if (aiRes.data && aiRes.data.answer) {
+        setAiAnswer(aiRes.data.answer);
+      }
     } catch (err) {
       console.error(err);
     } finally {
       setIsSearching(false);
+      setIsAiLoading(false);
     }
   };
 
@@ -65,7 +160,7 @@ export default function Search() {
       <nav className="relative z-10 p-4 max-w-7xl mx-auto flex items-center justify-between w-full">
         <div className="flex items-center gap-12 bg-white/40 backdrop-blur-md px-6 py-3 rounded-full shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] border border-white/40">
           <Link to="/dashboard" className="flex items-center gap-2">
-            <span className="font-bold text-xl tracking-tight text-teal-900">Study<span className="text-teal-600">Lens</span></span>
+            <img src="/logo.png" alt="StudyLens" className="h-16 w-auto scale-125 origin-left" />
             <span className="text-xs font-medium text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full">beta</span>
           </Link>
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
@@ -135,20 +230,55 @@ export default function Search() {
             </div>
           )}
 
+          {/* AI Answer Card */}
+          {hasSearched && (aiAnswer || isAiLoading) && results.length > 0 && (
+            <div className="bg-white/80 backdrop-blur-xl border border-teal-200 rounded-3xl p-8 shadow-md relative overflow-hidden mb-8">
+              <div className="absolute top-0 left-0 w-1.5 h-full bg-teal-500"></div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center shrink-0">
+                  <BookOpen className="w-5 h-5 text-teal-700" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">AI Summary</h2>
+              </div>
+              
+              {isAiLoading ? (
+                <div className="flex items-center gap-3 text-teal-700 font-medium animate-pulse py-4">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Synthesizing answer from your documents...
+                </div>
+              ) : (
+                <div className="text-gray-800 text-[16px] leading-relaxed prose prose-teal max-w-none">
+                  {aiAnswer}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Regular Search Results */}
+          {results.length > 0 && (
+            <div className="flex items-center gap-2 mb-6 ml-2">
+              <h3 className="text-lg font-medium text-gray-800">Source Extracts</h3>
+              <span className="bg-white/50 border border-gray-200 text-gray-600 text-xs font-bold px-2 py-0.5 rounded-full">{results.length}</span>
+            </div>
+          )}
+
           {results.map((result, index) => (
             <div key={result.id || index} className="bg-white/60 backdrop-blur-xl border border-white/60 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex justify-between items-start mb-3">
-                <div className="flex items-center gap-2 bg-teal-100/50 border border-teal-200 text-teal-800 px-3 py-1 rounded-full text-xs font-semibold">
+                <Link 
+                  to={`/dashboard?docId=${result.page?.document?.id}`}
+                  className="flex items-center gap-2 bg-teal-100/50 border border-teal-200 text-teal-800 px-3 py-1 rounded-full text-xs font-semibold hover:bg-teal-200/50 hover:text-teal-900 transition-colors cursor-pointer"
+                >
                   <FileText className="w-3.5 h-3.5" />
                   {result.page?.document?.title || 'Unknown Document'}
-                </div>
+                </Link>
                 <span className="text-xs font-medium text-gray-500 bg-white/50 px-3 py-1 rounded-full border border-gray-200">
                   Page {result.page?.pageNumber}
                 </span>
               </div>
-              <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">
-                {result.content}
-              </p>
+              <div className="text-gray-800 leading-relaxed text-[15px] font-medium tracking-wide">
+                {formatDocumentText(result.content)}
+              </div>
             </div>
           ))}
         </div>

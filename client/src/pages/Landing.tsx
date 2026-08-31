@@ -23,10 +23,7 @@ export default function Landing() {
       <nav className="relative z-50 p-4 max-w-7xl mx-auto flex items-center justify-between mt-4">
         <div className="flex items-center gap-12 bg-white/40 backdrop-blur-md px-6 py-3 rounded-full shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] border border-white/40">
           <div className="flex items-center gap-2">
-            <div className="bg-teal-600 p-1.5 rounded-lg text-white shadow-sm">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <span className="font-bold text-xl tracking-tight text-teal-900">Study<span className="text-teal-600">Lens</span></span>
+            <img src="/logo.png" alt="StudyLens" className="h-16 w-auto scale-125 origin-left" />
           </div>
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
             <a href="#features" className="hover:text-teal-700 transition-colors">Features</a>
