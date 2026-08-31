@@ -90,7 +90,7 @@ router.post('/', upload.single('file'), async (req: Request, res: Response): Pro
       const data = await pdfParse(pdfBuffer);
       
       // 3. Save extracted text
-      await prisma.documentPage.create({
+      const page = await prisma.documentPage.create({
         data: {
           documentId: document.id,
           pageNumber: 1, // Treat entire extracted text as one page for now
@@ -98,7 +98,38 @@ router.post('/', upload.single('file'), async (req: Request, res: Response): Pro
         }
       });
 
-      // 4. Update status to COMPLETED
+      // 4. Chunk the text
+      // Split by double newline (paragraphs)
+      const rawChunks = data.text.split(/\n\s*\n/);
+      let chunksToSave: string[] = [];
+      const MAX_CHUNK_LENGTH = 1000;
+      
+      for (const chunk of rawChunks) {
+        const cleanChunk = chunk.trim();
+        if (!cleanChunk) continue;
+        
+        // If chunk is too large, split it further
+        if (cleanChunk.length > MAX_CHUNK_LENGTH) {
+          const subChunks = cleanChunk.match(new RegExp(`.{1,${MAX_CHUNK_LENGTH}}`, 'gs')) || [];
+          chunksToSave.push(...subChunks.map((sc: string) => sc.trim()).filter(Boolean));
+        } else {
+          chunksToSave.push(cleanChunk);
+        }
+      }
+
+      // 5. Save chunks to database
+      if (chunksToSave.length > 0) {
+        const chunkData = chunksToSave.map((content, index) => ({
+          pageId: page.id,
+          chunkIndex: index,
+          content: content
+        }));
+        await prisma.documentChunk.createMany({
+          data: chunkData
+        });
+      }
+
+      // 6. Update status to COMPLETED
       document = await prisma.document.update({
         where: { id: document.id },
         data: { status: 'COMPLETED' }
@@ -115,6 +146,101 @@ router.post('/', upload.single('file'), async (req: Request, res: Response): Pro
   } catch (error: any) {
     console.error('Error uploading document:', error);
     res.status(500).json({ message: error.message || 'Server error' });
+  }
+});
+
+// Get a specific document by ID
+router.get('/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const document = await prisma.document.findUnique({
+      where: { id },
+      include: {
+        pages: true // Include extracted text pages
+      }
+    });
+
+    if (!document) {
+      res.status(404).json({ message: 'Document not found' });
+      return;
+    }
+
+    if (document.userId !== req.user!.id) {
+      res.status(403).json({ message: 'Forbidden' });
+      return;
+    }
+
+    res.json(document);
+  } catch (error) {
+    console.error('Error fetching document:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Update a document (e.g. rename)
+router.patch('/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { title, subjectId } = req.body;
+
+    const existingDoc = await prisma.document.findUnique({ where: { id } });
+    if (!existingDoc) {
+      res.status(404).json({ message: 'Document not found' });
+      return;
+    }
+
+    if (existingDoc.userId !== req.user!.id) {
+      res.status(403).json({ message: 'Forbidden' });
+      return;
+    }
+
+    const updatedDoc = await prisma.document.update({
+      where: { id },
+      data: {
+        title: title !== undefined ? title : existingDoc.title,
+        subjectId: subjectId !== undefined ? subjectId : existingDoc.subjectId
+      }
+    });
+
+    res.json(updatedDoc);
+  } catch (error) {
+    console.error('Error updating document:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Delete a document
+router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const document = await prisma.document.findUnique({ where: { id } });
+    if (!document) {
+      res.status(404).json({ message: 'Document not found' });
+      return;
+    }
+
+    if (document.userId !== req.user!.id) {
+      res.status(403).json({ message: 'Forbidden' });
+      return;
+    }
+
+    // Delete file from disk
+    if (document.file_path && fs.existsSync(document.file_path)) {
+      try {
+        fs.unlinkSync(document.file_path);
+      } catch (fsError) {
+        console.error('Error deleting file from disk:', fsError);
+      }
+    }
+
+    // Delete from database (pages will cascade delete per schema)
+    await prisma.document.delete({ where: { id } });
+
+    res.json({ message: 'Document deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting document:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

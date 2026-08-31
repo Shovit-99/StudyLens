@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
-import { Book, LayoutDashboard, Brain, BookOpen, User as UserIcon, LogOut, ChevronDown, CheckCircle2, Clock, Upload, ArrowRight } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useNavigate, Link } from 'react-router-dom';
+import { Book, LayoutDashboard, Brain, BookOpen, User as UserIcon, LogOut, ChevronDown, CheckCircle2, Clock, Upload, ArrowRight, FileText, Trash2, Edit2, X, Save } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const data = [
   { name: 'Mon', active: 1.2, secondary: 0.8 },
@@ -19,6 +19,10 @@ export default function Dashboard() {
   const [subjects, setSubjects] = useState<any[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [documents, setDocuments] = useState<any[]>([]);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
+  const [documentDetails, setDocumentDetails] = useState<any>(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
   const [aiEnabled, setAiEnabled] = useState(true);
   const navigate = useNavigate();
 
@@ -36,7 +40,56 @@ export default function Dashboard() {
 
   const handleSubjectClick = (subjectId: string) => {
     setSelectedSubjectId(subjectId);
+    setSelectedDocumentId(null);
+    setDocumentDetails(null);
     fetchDocuments(subjectId);
+  };
+
+  const handleDocumentClick = async (docId: string) => {
+    setSelectedDocumentId(docId);
+    setDocumentDetails(null);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`http://localhost:5000/api/documents/${docId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setDocumentDetails(res.data);
+      setNewTitle(res.data.title);
+    } catch(err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateTitle = async () => {
+    if (!selectedDocumentId || !newTitle.trim()) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.patch(`http://localhost:5000/api/documents/${selectedDocumentId}`, { title: newTitle }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setDocumentDetails({ ...documentDetails, title: newTitle });
+      setIsEditingTitle(false);
+      // Refresh documents list if viewing a subject
+      if (selectedSubjectId) fetchDocuments(selectedSubjectId);
+    } catch(err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteDocument = async () => {
+    if (!selectedDocumentId) return;
+    if (!window.confirm("Are you sure you want to delete this document?")) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`http://localhost:5000/api/documents/${selectedDocumentId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSelectedDocumentId(null);
+      setDocumentDetails(null);
+      if (selectedSubjectId) fetchDocuments(selectedSubjectId);
+    } catch(err) {
+      console.error(err);
+    }
   };
 
   useEffect(() => {
@@ -122,7 +175,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#dcece2] relative overflow-hidden font-sans text-gray-800">
+    <div className="min-h-screen bg-[#dcece2] relative overflow-x-hidden font-sans text-gray-800">
       {/* Background Blobs for Glassmorphic Depth */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-teal-200/50 blur-[120px] mix-blend-multiply"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-emerald-200/50 blur-[100px] mix-blend-multiply"></div>
@@ -135,7 +188,8 @@ export default function Dashboard() {
             <span className="text-xs font-medium text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full">beta</span>
           </div>
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
-            <a href="#" className="hover:text-teal-700 flex items-center gap-1">Dashboard <ChevronDown className="w-3 h-3"/></a>
+            <Link to="/dashboard" className="text-teal-700 flex items-center gap-1">Dashboard <ChevronDown className="w-3 h-3"/></Link>
+            <Link to="/search" className="hover:text-teal-700">Search</Link>
             <a href="#" className="hover:text-teal-700">Subjects</a>
             <a href="#" className="hover:text-teal-700">Documents</a>
             <a href="#" className="hover:text-teal-700">Analytics</a>
@@ -285,13 +339,90 @@ export default function Dashboard() {
                       <Bar dataKey="secondary" stackId="a" fill="#e5e7eb" radius={[0, 0, 4, 4]} />
                       <Bar dataKey="active" stackId="a" radius={[4, 4, 0, 0]}>
                         {data.map((entry, index) => (
-                          <cell key={`cell-${index}`} fill={entry.name === 'Thu' ? '#10b981' : '#cbd5e1'} />
+                          <Cell key={`cell-${index}`} fill={entry.name === 'Thu' ? '#10b981' : '#cbd5e1'} />
                         ))}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </>
+            ) : selectedDocumentId && documentDetails ? (
+              <div className="flex flex-col h-full">
+                <div className="flex items-center justify-between mb-6 pb-6 border-b border-white/40">
+                  <div className="flex items-center gap-4 flex-1">
+                    <div className="w-12 h-12 rounded-xl bg-teal-100 border border-teal-200 flex items-center justify-center shadow-sm shrink-0">
+                      <FileText className="w-6 h-6 text-teal-700"/>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      {isEditingTitle ? (
+                        <div className="flex items-center gap-2">
+                          <input 
+                            type="text" 
+                            value={newTitle} 
+                            onChange={(e) => setNewTitle(e.target.value)}
+                            className="bg-white/70 border border-teal-300 rounded-lg px-3 py-1.5 text-lg font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 w-full max-w-md"
+                            autoFocus
+                          />
+                          <button onClick={handleUpdateTitle} className="p-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors">
+                            <Save className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => { setIsEditingTitle(false); setNewTitle(documentDetails.title); }} className="p-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <h2 className="font-bold text-xl leading-tight text-gray-900 truncate" title={documentDetails.title}>
+                            {documentDetails.title}
+                          </h2>
+                          <button onClick={() => setIsEditingTitle(true)} className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition-colors">
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                      <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
+                        <span>{new Date(documentDetails.createdAt).toLocaleDateString()}</span>
+                        <span>•</span>
+                        <span>{(documentDetails.file_size / 1024 / 1024).toFixed(2)} MB</span>
+                        <span>•</span>
+                        <span className="capitalize">{documentDetails.status.toLowerCase()}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0 ml-4">
+                    <button onClick={handleDeleteDocument} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors">
+                      <Trash2 className="w-4 h-4" /> Delete
+                    </button>
+                    <button onClick={() => setSelectedDocumentId(null)} className="text-sm text-gray-500 hover:text-gray-800 bg-white/50 px-3 py-1.5 rounded-lg border border-white/60 shadow-sm transition-colors">
+                      Back to List
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                  <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-teal-600" /> Extracted Text
+                  </h3>
+                  {documentDetails.pages && documentDetails.pages.length > 0 ? (
+                    <div className="space-y-6">
+                      {documentDetails.pages.map((page: any) => (
+                        <div key={page.id} className="bg-white/60 border border-white/80 rounded-xl p-6 shadow-sm">
+                          <div className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wider">Page {page.pageNumber}</div>
+                          <p className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{page.content}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="bg-white/40 border border-white/60 rounded-xl p-8 text-center">
+                      <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+                        <FileText className="w-6 h-6 text-gray-400" />
+                      </div>
+                      <p className="text-gray-500 font-medium">No text extracted yet.</p>
+                      <p className="text-sm text-gray-400 mt-1">If this document is still processing, please check back later.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : (
               <div className="flex flex-col h-full">
                 <div className="flex items-center justify-between mb-8">
@@ -314,13 +445,17 @@ export default function Dashboard() {
                 <div className="flex-1 overflow-y-auto space-y-3 pr-2">
                   {documents.length > 0 ? (
                     documents.map(doc => (
-                      <div key={doc.id} className="bg-white/60 border border-white/80 rounded-xl p-4 flex items-center justify-between shadow-sm hover:shadow-md transition-shadow">
+                      <div 
+                        key={doc.id} 
+                        onClick={() => handleDocumentClick(doc.id)}
+                        className="bg-white/60 border border-white/80 rounded-xl p-4 flex items-center justify-between shadow-sm hover:shadow-md hover:bg-white/80 hover:border-teal-200 transition-all cursor-pointer group"
+                      >
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center">
+                          <div className="w-8 h-8 rounded-lg bg-teal-100 flex items-center justify-center group-hover:bg-teal-200 transition-colors">
                             <Book className="w-4 h-4 text-teal-700"/>
                           </div>
                           <div>
-                            <h3 className="font-medium text-gray-900 text-sm">{doc.title}</h3>
+                            <h3 className="font-medium text-gray-900 text-sm group-hover:text-teal-900 transition-colors">{doc.title}</h3>
                             <p className="text-xs text-gray-500 mt-0.5">{new Date(doc.createdAt).toLocaleDateString()} • {(doc.file_size / 1024 / 1024).toFixed(2)} MB</p>
                           </div>
                         </div>
