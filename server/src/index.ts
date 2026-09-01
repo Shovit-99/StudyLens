@@ -14,6 +14,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust the first proxy to enable correct IP tracking for rate limiters on platforms like Render
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.json());
 
