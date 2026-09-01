@@ -30,8 +30,28 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
         outputDimensionality: 768
       }));
       
-      const result = await model.batchEmbedContents({ requests });
-      embeddings.push(...result.embeddings.map(e => e.values));
+      let success = false;
+      let retries = 0;
+      
+      while (!success && retries < 3) {
+        try {
+          const result = await model.batchEmbedContents({ requests });
+          embeddings.push(...result.embeddings.map(e => e.values));
+          success = true;
+        } catch (error: any) {
+          if (error.message && error.message.includes('429 Too Many Requests')) {
+            console.warn(`[Gemini API] Rate limit hit. Waiting 60 seconds before retrying batch (Retry ${retries + 1}/3)...`);
+            await new Promise(resolve => setTimeout(resolve, 60000));
+            retries++;
+          } else {
+            throw error;
+          }
+        }
+      }
+      
+      if (!success) {
+        throw new Error('Failed to generate embeddings after multiple retries due to rate limits.');
+      }
     }
     
     return embeddings;
