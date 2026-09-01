@@ -21,14 +21,17 @@ export async function generateEmbeddings(texts: string[]): Promise<number[][]> {
   try {
     const embeddings: number[][] = [];
     
-    // We send requests sequentially to avoid rate limits
-    for (const text of texts) {
-      const requestPayload: any = { 
-        content: { role: "user", parts: [{ text: text }] }, 
-        outputDimensionality: 768 
-      };
-      const result = await model.embedContent(requestPayload);
-      embeddings.push(result.embedding.values);
+    // Process in batches of 50 to avoid hitting limits or oversized payloads
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batchTexts = texts.slice(i, i + BATCH_SIZE);
+      const requests = batchTexts.map(text => ({
+        content: { role: "user", parts: [{ text }] },
+        outputDimensionality: 768
+      }));
+      
+      const result = await model.batchEmbedContents({ requests });
+      embeddings.push(...result.embeddings.map(e => e.values));
     }
     
     return embeddings;
