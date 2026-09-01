@@ -500,7 +500,7 @@ export default function Dashboard() {
                         documentDetails.file_type === 'application/pdf' ? (
                           <>
                             <iframe 
-                              src={`/uploads/${documentDetails.file_path.split(/[\\/]/).pop()}#toolbar=0&navpanes=0&view=FitH`}
+                              src={`${axios.defaults.baseURL || ''}/uploads/${documentDetails.file_path.split(/[\\/]/).pop()}#toolbar=0&navpanes=0&view=FitH`}
                               className="w-full h-full bg-slate-100/50"
                               title={documentDetails.title}
                             />
