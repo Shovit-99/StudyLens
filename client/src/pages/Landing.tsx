@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Book, LayoutDashboard, Brain, BookOpen, User as UserIcon, CheckCircle2, Clock, ArrowRight, ChevronDown, FileText } from 'lucide-react';
+import { Book, Brain, BookOpen, FileText } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const data = [

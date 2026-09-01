@@ -4,6 +4,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 const pdfParse = require('pdf-parse'); // standard version 1.1.1
+const { parseOffice } = require('officeparser');
 import prisma from '../prisma';
 import { auth } from '../middleware/auth';
 import { generateEmbeddings } from '../utils/embeddings';
@@ -32,10 +33,15 @@ const upload = multer({
   storage: storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf') {
+    const allowedMimeTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.ms-powerpoint'
+    ];
+    if (allowedMimeTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF files are allowed'));
+      cb(new Error('Only PDF and PPTX files are allowed'));
     }
   }
 });
@@ -87,23 +93,36 @@ router.post('/', uploadLimiter, upload.single('file'), async (req: Request, res:
       }
     });
 
-    try {
-      // 2. Parse the PDF
-      const pdfBuffer = fs.readFileSync(file.path);
-      const data = await pdfParse(pdfBuffer);
+    // Send response immediately to avoid upload latency
+    res.status(201).json(document);
+
+    // Process file asynchronously in the background
+    (async () => {
+      try {
+      // 2. Parse the file based on type
+      let extractedText = '';
+      if (file.mimetype === 'application/pdf') {
+        const pdfBuffer = fs.readFileSync(file.path);
+        const data = await pdfParse(pdfBuffer);
+        extractedText = data.text;
+      } else {
+        // PPTX parsing
+        const doc = await parseOffice(file.path);
+        extractedText = typeof doc === 'string' ? doc : (doc.toText ? doc.toText() : doc.toString());
+      }
       
       // 3. Save extracted text
       const page = await prisma.documentPage.create({
         data: {
           documentId: document.id,
           pageNumber: 1, // Treat entire extracted text as one page for now
-          content: data.text
+          content: extractedText
         }
       });
 
       // 4. Chunk the text
       // Split by double newline (paragraphs)
-      const rawChunks = data.text.split(/\n\s*\n/);
+      const rawChunks = extractedText.split(/\n\s*\n/);
       let chunksToSave: string[] = [];
       const MAX_CHUNK_LENGTH = 1000;
       
@@ -173,8 +192,8 @@ router.post('/', uploadLimiter, upload.single('file'), async (req: Request, res:
         data: { status: 'FAILED' }
       });
     }
+    })(); // End of background processing
 
-    res.status(201).json(document);
   } catch (error: any) {
     console.error('Error uploading document:', error);
     res.status(500).json({ message: error.message || 'Server error' });

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
-import { BookOpen, LogOut, Search as SearchIcon, FileText, ChevronDown, Loader2 } from 'lucide-react';
+import { BookOpen, LogOut, Search as SearchIcon, FileText, Loader2 } from 'lucide-react';
 
 const formatDocumentText = (text: string) => {
   let processed = text.replace(/([a-z])([A-Z])/g, '$1 $2');
@@ -71,7 +71,7 @@ export default function Search() {
         return;
       }
       try {
-        const userRes = await axios.get('http://localhost:5000/api/auth/me', {
+        const userRes = await axios.get('/api/auth/me', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setUser(userRes.data);
@@ -101,11 +101,11 @@ export default function Search() {
       const token = localStorage.getItem('token');
       
       // Fire both requests concurrently
-      const searchReq = axios.get(`http://localhost:5000/api/search/hybrid?q=${encodeURIComponent(query)}`, {
+      const searchReq = axios.get(`/api/search/hybrid?q=${encodeURIComponent(query)}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      const aiReq = axios.post(`http://localhost:5000/api/chat/global`, 
+      const aiReq = axios.post(`/api/chat/global`, 
         { query },
         { headers: { Authorization: `Bearer ${token}` } }
       ).catch(e => {
@@ -121,7 +121,7 @@ export default function Search() {
       if (finalResults.length > 0) {
         try {
           const topResults = finalResults.slice(0, 10);
-          const formatRes = await axios.post(`http://localhost:5000/api/chat/format`, 
+          const formatRes = await axios.post(`/api/chat/format`, 
             { chunks: topResults.map((r: any) => r.content) },
             { headers: { Authorization: `Bearer ${token}` } }
           );
@@ -161,12 +161,10 @@ export default function Search() {
         <div className="flex items-center gap-12 bg-white/40 backdrop-blur-md px-6 py-3 rounded-full shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] border border-white/40">
           <Link to="/dashboard" className="flex items-center gap-2">
             <img src="/logo.png" alt="StudyLens" className="h-16 w-auto scale-125 origin-left" />
-            <span className="text-xs font-medium text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full">beta</span>
           </Link>
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
             <Link to="/dashboard" className="hover:text-teal-700">Dashboard</Link>
             <Link to="/search" className="text-teal-700 flex items-center gap-1">Search</Link>
-            <a href="#" className="hover:text-teal-700">Analytics</a>
           </div>
         </div>
         

@@ -1,48 +1,17 @@
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { Book, LayoutDashboard, Brain, BookOpen, User as UserIcon, LogOut, ChevronDown, CheckCircle2, Clock, Upload, ArrowRight, FileText, Trash2, Edit2, X, Save, Send, Bot, Maximize2, Minimize2, GraduationCap } from 'lucide-react';
+import { Book, LayoutDashboard, Brain, BookOpen, LogOut, CheckCircle2, Clock, Upload, FileText, Trash2, Edit2, X, Save, Send, Bot, Maximize2, Minimize2, GraduationCap } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import QuizModal from '../components/QuizModal';
 import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 // Data will be fetched dynamically
 
-const formatDocumentText = (text: string) => {
-  let processed = text.replace(/([a-z])([A-Z])/g, '$1 $2');
-  const lines = processed.split('\n');
-  
-  return lines.map((line, idx) => {
-    const trimmed = line.trim();
-    if (!trimmed) return <div key={idx} className="h-2"></div>;
 
-    const isHeader = trimmed.length > 0 && trimmed.length < 60 && 
-                     !/^[•\-\*]/.test(trimmed) && 
-                     !/[.,:;!?]$/.test(trimmed);
-
-    const isCode = /[{}=;]/.test(trimmed) || /^(const |let |var |import |export |function |class |if |for |while )/.test(trimmed);
-
-    if (isHeader && !isCode) {
-      return <h4 key={idx} className="font-bold text-slate-900 text-[18px] mt-6 mb-2">{trimmed}</h4>;
-    }
-
-    if (isCode) {
-      return (
-        <code key={idx} className="block font-mono text-[13px] bg-slate-100 text-slate-800 px-3 py-1.5 rounded-md my-1 whitespace-pre overflow-x-auto">
-          {line}
-        </code>
-      );
-    }
-
-    const isBullet = /^[•\-\*]/.test(trimmed);
-    if (isBullet) {
-      const formattedBullet = trimmed.replace(/^[•\-\*]\s*/, '• ');
-      return <p key={idx} className="pl-4 relative text-slate-700 leading-relaxed my-1"><span className="absolute left-0 font-bold text-teal-500">•</span>{formattedBullet.substring(2)}</p>;
-    }
-
-    return <p key={idx} className="text-slate-700 leading-relaxed my-2">{trimmed}</p>;
-  });
-};
 
 export default function Dashboard() {
   const [user, setUser] = useState<{ name: string; email: string; id: string } | null>(null);
@@ -63,6 +32,14 @@ export default function Dashboard() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [stats, setStats] = useState({ total: 0, chartData: [] });
   const [showArchived, setShowArchived] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{title: string, type: 'success' | 'error'} | null>(null);
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -78,7 +55,7 @@ export default function Dashboard() {
   const fetchDocuments = async (subjectId: string) => {
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get(`http://localhost:5000/api/documents?subjectId=${subjectId}`, {
+      const res = await axios.get(`/api/documents?subjectId=${subjectId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setDocuments(res.data);
@@ -87,11 +64,23 @@ export default function Dashboard() {
     }
   };
 
+  // Poll for document status updates if any document is processing
+  useEffect(() => {
+    if (!selectedSubjectId) return;
+    const hasProcessing = documents.some(doc => doc.status === 'PROCESSING');
+    if (hasProcessing) {
+      const interval = setInterval(() => {
+        fetchDocuments(selectedSubjectId);
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [documents, selectedSubjectId]);
+
   const fetchSubjects = async (isArchived: boolean) => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
-      const res = await axios.get(`http://localhost:5000/api/subjects?archived=${isArchived}`, {
+      const res = await axios.get(`/api/subjects?archived=${isArchived}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setSubjects(res.data);
@@ -109,7 +98,7 @@ export default function Dashboard() {
   const toggleArchiveSubject = async (subjectId: string, isArchived: boolean) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.patch(`http://localhost:5000/api/subjects/${subjectId}/archive`, { isArchived }, {
+      await axios.patch(`/api/subjects/${subjectId}/archive`, { isArchived }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchSubjects(showArchived);
@@ -137,7 +126,7 @@ export default function Dashboard() {
     setExpandedPanel(null);
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get(`http://localhost:5000/api/documents/${docId}`, {
+      const res = await axios.get(`/api/documents/${docId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setDocumentDetails(res.data);
@@ -151,7 +140,7 @@ export default function Dashboard() {
     if (!selectedDocumentId || !newTitle.trim()) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.patch(`http://localhost:5000/api/documents/${selectedDocumentId}`, { title: newTitle }, {
+      await axios.patch(`/api/documents/${selectedDocumentId}`, { title: newTitle }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setDocumentDetails({ ...documentDetails, title: newTitle });
@@ -168,7 +157,7 @@ export default function Dashboard() {
     if (!window.confirm("Are you sure you want to delete this document?")) return;
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:5000/api/documents/${selectedDocumentId}`, {
+      await axios.delete(`/api/documents/${selectedDocumentId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setSelectedDocumentId(null);
@@ -187,19 +176,19 @@ export default function Dashboard() {
         return;
       }
       try {
-        const userRes = await axios.get('http://localhost:5000/api/auth/me', {
+        const userRes = await axios.get('/api/auth/me', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setUser(userRes.data);
 
         // Fetch subjects
-        const subjectsRes = await axios.get(`http://localhost:5000/api/subjects?archived=${showArchived}`, {
+        const subjectsRes = await axios.get(`/api/subjects?archived=${showArchived}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setSubjects(subjectsRes.data);
 
         // Fetch weekly stats
-        const statsRes = await axios.get('http://localhost:5000/api/documents/stats/weekly', {
+        const statsRes = await axios.get('/api/documents/stats/weekly', {
           headers: { Authorization: `Bearer ${token}` }
         });
         setStats(statsRes.data);
@@ -222,7 +211,7 @@ export default function Dashboard() {
     if(!name) return;
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.post('http://localhost:5000/api/subjects', { name }, {
+      const res = await axios.post('/api/subjects', { name }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setSubjects([res.data, ...subjects]);
@@ -243,7 +232,7 @@ export default function Dashboard() {
 
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.post('http://localhost:5000/api/chat', 
+      const res = await axios.post('/api/chat', 
         { query, documentId: selectedDocumentId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -267,19 +256,19 @@ export default function Dashboard() {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5000/api/documents', formData, {
+      await axios.post('/api/documents', formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
         }
       });
-      alert(`Successfully uploaded ${file.name}!`);
+      setToastMessage({ title: `Successfully uploaded ${file.name}!`, type: 'success' });
       if (selectedSubjectId === subjectId) {
         fetchDocuments(subjectId);
       }
     } catch(err) {
       console.error(err);
-      alert('Failed to upload document.');
+      setToastMessage({ title: 'Failed to upload document.', type: 'error' });
     }
   };
 
@@ -302,7 +291,6 @@ export default function Dashboard() {
         <div className="flex items-center gap-12 bg-white/40 backdrop-blur-md px-6 py-3 rounded-full shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] border border-white/40">
           <div className="flex items-center gap-2">
             <img src="/logo.png" alt="StudyLens" className="h-16 w-auto scale-125 origin-left" />
-            <span className="text-xs font-medium text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full">beta</span>
           </div>
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
             <Link to="/dashboard" className="text-teal-700 flex items-center gap-1">Dashboard</Link>
@@ -368,7 +356,7 @@ export default function Dashboard() {
               {/* Dynamic Subjects List */}
               <div className="space-y-1.5">
                 {subjects.length > 0 ? (
-                  subjects.map((sub, index) => (
+                  subjects.map((sub) => (
                     <div key={sub.id} onClick={() => handleSubjectClick(sub.id)} className={`flex items-center justify-between group px-3 py-2.5 rounded-lg transition-all cursor-pointer border ${selectedSubjectId === sub.id ? 'bg-teal-50/50 border-teal-200/60 shadow-sm' : 'border-transparent hover:bg-slate-50 hover:border-slate-200'}`}>
                       <div className="flex items-center gap-3">
                         <BookOpen className={`w-4 h-4 ${selectedSubjectId === sub.id ? 'text-teal-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
@@ -379,8 +367,8 @@ export default function Dashboard() {
                           {showArchived ? 'Unarchive' : 'Archive'}
                         </button>
                         <label onClick={(e) => e.stopPropagation()} className="cursor-pointer text-[11px] font-semibold tracking-wide uppercase text-slate-500 hover:text-teal-600 hover:bg-teal-50 px-2 py-1 rounded transition-colors flex items-center gap-1 opacity-0 group-hover:opacity-100">
-                          <Upload className="w-3 h-3"/> PDF
-                          <input type="file" className="hidden" accept=".pdf" onChange={(e) => handleFileUpload(sub.id, e)} />
+                          <Upload className="w-3 h-3"/> Upload
+                          <input type="file" className="hidden" accept=".pdf,.pptx" onChange={(e) => handleFileUpload(sub.id, e)} />
                         </label>
                       </div>
                     </div>
@@ -509,20 +497,30 @@ export default function Dashboard() {
                   {(expandedPanel === null || expandedPanel === 'notes') && (
                     <div ref={pdfContainerRef} className={`overflow-hidden relative ${aiEnabled && expandedPanel === null ? 'w-1/2 border-r border-slate-200' : 'w-full'}`}>
                       {documentDetails.file_path ? (
-                        <>
-                          <iframe 
-                            src={`http://localhost:5000/uploads/${documentDetails.file_path.split(/[\\/]/).pop()}#toolbar=0&navpanes=0&view=FitH`}
-                            className="w-full h-full bg-slate-100/50"
-                            title={documentDetails.title}
-                          />
-                          <button 
-                            onClick={() => setExpandedPanel(expandedPanel === 'notes' ? null : 'notes')}
-                            className="absolute bottom-4 right-4 p-2.5 bg-white border border-slate-200 shadow-lg rounded-full text-slate-500 hover:text-teal-600 hover:bg-slate-50 transition-colors z-10"
-                            title={expandedPanel === 'notes' ? "Restore Panel" : "Maximize Panel"}
-                          >
-                            {expandedPanel === 'notes' ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
-                          </button>
-                        </>
+                        documentDetails.file_type === 'application/pdf' ? (
+                          <>
+                            <iframe 
+                              src={`/uploads/${documentDetails.file_path.split(/[\\/]/).pop()}#toolbar=0&navpanes=0&view=FitH`}
+                              className="w-full h-full bg-slate-100/50"
+                              title={documentDetails.title}
+                            />
+                            <button 
+                              onClick={() => setExpandedPanel(expandedPanel === 'notes' ? null : 'notes')}
+                              className="absolute bottom-4 right-4 p-2.5 bg-white border border-slate-200 shadow-lg rounded-full text-slate-500 hover:text-teal-600 hover:bg-slate-50 transition-colors z-10"
+                              title={expandedPanel === 'notes' ? "Restore Panel" : "Maximize Panel"}
+                            >
+                              {expandedPanel === 'notes' ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center h-full text-center bg-slate-50">
+                            <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center mb-4 border border-slate-200 shadow-sm">
+                              <FileText className="w-8 h-8 text-teal-600" />
+                            </div>
+                            <h3 className="text-slate-900 font-semibold mb-1">Presentation Uploaded</h3>
+                            <p className="text-[14px] text-slate-500 max-w-xs mx-auto">The text from this presentation has been successfully extracted for AI search. Visual preview is not available for presentations.</p>
+                          </div>
+                        )
                       ) : (
                         <div className="flex flex-col items-center justify-center h-full text-center">
                           <div className="w-16 h-16 rounded-2xl bg-slate-50 flex items-center justify-center mb-4 border border-slate-100">
@@ -562,6 +560,8 @@ export default function Dashboard() {
                                   {msg.role === 'ai' ? (
                                     <div className="markdown-body">
                                       <ReactMarkdown
+                                        remarkPlugins={[remarkMath]}
+                                        rehypePlugins={[rehypeKatex]}
                                         components={{
                                           strong: ({node, ...props}) => <strong className="font-bold text-slate-900" {...props} />,
                                           code: ({node, inline, ...props}: any) => 
@@ -577,7 +577,7 @@ export default function Dashboard() {
                                           li: ({node, ...props}) => <li className="pl-1" {...props} />
                                         }}
                                       >
-                                        {msg.content}
+                                        {msg.content.replace(/\\\[/g, '$$$$').replace(/\\\]/g, '$$$$').replace(/\\\(/g, '$').replace(/\\\)/g, '$')}
                                       </ReactMarkdown>
                                     </div>
                                   ) : (
@@ -687,7 +687,7 @@ export default function Dashboard() {
                           <Upload className="w-8 h-8 text-slate-300"/>
                         </div>
                         <h3 className="text-slate-900 font-semibold mb-1">No documents found</h3>
-                        <p className="text-[14px] text-slate-500">Upload a PDF to get started!</p>
+                        <p className="text-[14px] text-slate-500">Upload a PDF or PPTX to get started!</p>
                       </div>
                     )}
                   </div>
@@ -697,6 +697,16 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border ${
+          toastMessage.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
+        } transition-all duration-300`}>
+          {toastMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <X className="w-5 h-5 text-red-600" />}
+          <p className="text-[14px] font-semibold">{toastMessage.title}</p>
+        </div>
+      )}
     </div>
   );
 }
