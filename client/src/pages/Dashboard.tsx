@@ -236,6 +236,7 @@ export default function Dashboard() {
         { query, documentId: selectedDocumentId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      console.log("AI DEBUG CONTEXT:", res.data.debugContext);
       setChatMessages(prev => [...prev, { role: 'ai', content: res.data.answer, sources: res.data.sources }]);
     } catch(err) {
       console.error(err);

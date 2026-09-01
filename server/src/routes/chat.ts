@@ -101,7 +101,8 @@ Answer:`;
 
       res.json({
         answer: completion.choices[0]?.message?.content || "",
-        sources: sourcePages
+        sources: sourcePages,
+        debugContext: contextText
       });
     } catch (error) {
       console.error('Error generating answer via Groq:', error);
