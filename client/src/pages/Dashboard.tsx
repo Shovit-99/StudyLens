@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { Book, LayoutDashboard, Brain, BookOpen, LogOut, CheckCircle2, Clock, Upload, FileText, Trash2, Edit2, X, Save, Send, Bot, Maximize2, Minimize2, GraduationCap } from 'lucide-react';
+import { Book, LayoutDashboard, Brain, BookOpen, LogOut, Clock, Upload, FileText, Trash2, Edit2, X, Save, Send, Bot, Maximize2, Minimize2, GraduationCap } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import QuizModal from '../components/QuizModal';
 import ReactMarkdown from 'react-markdown';
