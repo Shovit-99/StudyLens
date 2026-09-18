@@ -116,18 +116,22 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
 // OAuth routes
 const handleOAuthCallback = (req: Request, res: Response) => {
   const user = req.user as any;
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
   if (!user) {
-    return res.redirect('http://localhost:5173/login?error=oauth_failed');
+    return res.redirect(`${frontendUrl}/login?error=oauth_failed`);
   }
   
   const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'super-secret-jwt-key', {
     expiresIn: '7d',
   });
   
-  res.redirect(`http://localhost:5173/login?token=${token}`);
+  res.redirect(`${frontendUrl}/login?token=${token}`);
 };
 
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-router.get('/google/callback', passport.authenticate('google', { failureRedirect: 'http://localhost:5173/login?error=oauth_failed' }), handleOAuthCallback);
+router.get('/google/callback', (req, res, next) => {
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  passport.authenticate('google', { failureRedirect: `${frontendUrl}/login?error=oauth_failed` })(req, res, next);
+}, handleOAuthCallback);
 
 export default router;
