@@ -174,7 +174,7 @@ export default function Login() {
 
               <div className="mt-6 flex justify-center">
                 <a
-                  href="http://localhost:5000/api/auth/google"
+                  href={`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/google`}
                   className="w-full flex justify-center items-center py-2 px-4 border border-gray-300 rounded-xl shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
                 >
                   <svg className="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
