@@ -12,9 +12,12 @@ import 'katex/dist/katex.min.css';
 // Data will be fetched dynamically
 
 
+import { toast } from 'sonner';
+
+// Data will be fetched dynamically
 
 export default function Dashboard() {
-  const [user, setUser] = useState<{ name: string; email: string; id: string } | null>(null);
+  const [user, setUser] = useState<{ name: string; email: string; id: string, currentStreak: number, longestStreak: number, totalQuizzesTaken: number, totalCorrectAnswers: number } | null>(null);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
   const [documents, setDocuments] = useState<any[]>([]);
@@ -32,14 +35,6 @@ export default function Dashboard() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [stats, setStats] = useState({ total: 0, chartData: [] });
   const [showArchived, setShowArchived] = useState(false);
-  const [toastMessage, setToastMessage] = useState<{title: string, type: 'success' | 'error'} | null>(null);
-
-  useEffect(() => {
-    if (toastMessage) {
-      const timer = setTimeout(() => setToastMessage(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [toastMessage]);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -263,13 +258,13 @@ export default function Dashboard() {
           'Content-Type': 'multipart/form-data'
         }
       });
-      setToastMessage({ title: `Successfully uploaded ${file.name}!`, type: 'success' });
+      toast.success(`Successfully uploaded ${file.name}!`);
       if (selectedSubjectId === subjectId) {
         fetchDocuments(subjectId);
       }
     } catch(err) {
       console.error(err);
-      setToastMessage({ title: 'Failed to upload document.', type: 'error' });
+      toast.error('Failed to upload document.');
     }
   };
 
@@ -296,6 +291,7 @@ export default function Dashboard() {
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
             <Link to="/dashboard" className="text-teal-700 flex items-center gap-1">Dashboard</Link>
             <Link to="/search" className="hover:text-teal-700">Search</Link>
+            <Link to="/leaderboard" className="hover:text-teal-700">Leaderboard</Link>
           </div>
         </div>
         
@@ -414,7 +410,23 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </div>
-                <div className="flex-1 w-full h-[400px]">
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                  <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 flex flex-col justify-center items-center text-center shadow-sm">
+                    <span className="text-orange-600 text-3xl font-bold mb-1">🔥 {user?.currentStreak || 0}</span>
+                    <span className="text-sm font-medium text-orange-800">Current Streak</span>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex flex-col justify-center items-center text-center shadow-sm">
+                    <span className="text-blue-600 text-3xl font-bold mb-1">⭐ {user?.longestStreak || 0}</span>
+                    <span className="text-sm font-medium text-blue-800">Longest Streak</span>
+                  </div>
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex flex-col justify-center items-center text-center shadow-sm">
+                    <span className="text-emerald-600 text-3xl font-bold mb-1">🎯 {user?.totalCorrectAnswers || 0}</span>
+                    <span className="text-sm font-medium text-emerald-800">Total Quiz Points</span>
+                  </div>
+                </div>
+
+                <div className="flex-1 w-full h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={stats.chartData} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -699,15 +711,6 @@ export default function Dashboard() {
         </div>
       </main>
 
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border ${
-          toastMessage.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
-        } transition-all duration-300`}>
-          {toastMessage.type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <X className="w-5 h-5 text-red-600" />}
-          <p className="text-[14px] font-semibold">{toastMessage.title}</p>
-        </div>
-      )}
     </div>
   );
 }

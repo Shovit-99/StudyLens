@@ -56,11 +56,24 @@ export default function QuizModal({ isOpen, onClose, documentId, documentTitle }
     setIsAnswerRevealed(true);
   };
 
+  const submitQuizResults = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const finalScore = Object.entries(selectedAnswers).filter(([idx, answer]) => questions[parseInt(idx)].correctAnswer === answer).length;
+      await axios.post('/api/quiz/results', { correctAnswers: finalScore }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch (err) {
+      console.error('Failed to submit quiz results', err);
+    }
+  };
+
   const handleNext = () => {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(prev => prev + 1);
       setIsAnswerRevealed(false);
     } else {
+      submitQuizResults();
       setShowResults(true);
     }
   };

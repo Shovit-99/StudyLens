@@ -5,6 +5,7 @@ import { z } from 'zod';
 import prisma from '../prisma';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authLimiter } from '../middleware/rateLimiter';
+import passport from 'passport';
 
 const router = Router();
 
@@ -52,7 +53,7 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    let user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
@@ -61,6 +62,31 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
     if (!isMatch) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const lastActive = user.lastActiveDate ? new Date(user.lastActiveDate) : null;
+    if (lastActive) lastActive.setHours(0, 0, 0, 0);
+    
+    let currentStreak = user.currentStreak;
+    let longestStreak = user.longestStreak;
+    
+    if (!lastActive || lastActive.getTime() < today.getTime() - 86400000) {
+      currentStreak = 1;
+    } else if (lastActive.getTime() === today.getTime() - 86400000) {
+      currentStreak += 1;
+    }
+    
+    if (currentStreak > longestStreak) longestStreak = currentStreak;
+    
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        lastActiveDate: new Date(),
+        currentStreak,
+        longestStreak
+      }
+    });
 
     const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'super-secret-jwt-key', {
       expiresIn: '7d',
@@ -76,7 +102,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.id },
-      select: { id: true, email: true, name: true, createdAt: true },
+      select: { id: true, email: true, name: true, createdAt: true, currentStreak: true, longestStreak: true, totalQuizzesTaken: true, totalCorrectAnswers: true },
     });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -86,5 +112,22 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+// OAuth routes
+const handleOAuthCallback = (req: Request, res: Response) => {
+  const user = req.user as any;
+  if (!user) {
+    return res.redirect('http://localhost:5173/login?error=oauth_failed');
+  }
+  
+  const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'super-secret-jwt-key', {
+    expiresIn: '7d',
+  });
+  
+  res.redirect(`http://localhost:5173/login?token=${token}`);
+};
+
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+router.get('/google/callback', passport.authenticate('google', { failureRedirect: 'http://localhost:5173/login?error=oauth_failed' }), handleOAuthCallback);
 
 export default router;

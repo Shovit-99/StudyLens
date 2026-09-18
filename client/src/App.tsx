@@ -4,6 +4,8 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Search from './pages/Search';
+import Leaderboard from './pages/Leaderboard';
+import { Toaster } from 'sonner';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const token = localStorage.getItem('token');
@@ -16,6 +18,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 function App() {
   return (
     <Router>
+      <Toaster position="top-right" richColors />
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
@@ -33,6 +36,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Search />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/leaderboard" 
+          element={
+            <ProtectedRoute>
+              <Leaderboard />
             </ProtectedRoute>
           } 
         />

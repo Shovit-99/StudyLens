@@ -94,4 +94,33 @@ Ensure the output is strictly valid JSON and nothing else.`;
   }
 });
 
+router.post('/results', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = (req as any).user!.id;
+    const { correctAnswers } = req.body;
+
+    if (typeof correctAnswers !== 'number') {
+      res.status(400).json({ message: 'Invalid correctAnswers value' });
+      return;
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        totalQuizzesTaken: { increment: 1 },
+        totalCorrectAnswers: { increment: correctAnswers }
+      },
+      select: {
+        totalQuizzesTaken: true,
+        totalCorrectAnswers: true
+      }
+    });
+
+    res.json({ message: 'Results saved successfully', user: updatedUser });
+  } catch (error: any) {
+    console.error('Error in quiz results route:', error);
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+});
+
 export default router;
