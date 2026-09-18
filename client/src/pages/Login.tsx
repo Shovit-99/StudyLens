@@ -15,7 +15,6 @@ export default function Login() {
   const [searchParams] = useSearchParams();
 
   // Handle OAuth redirects
-  import.meta.env.VITE_IGNORE_EFFECT = 'false'; // Keep effect out of linter warning
   useEffect(() => {
     const errorParam = searchParams.get('error');
     const tokenParam = searchParams.get('token');
